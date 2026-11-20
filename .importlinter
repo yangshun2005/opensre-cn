@@ -1,0 +1,85 @@
+# Import-graph contracts. Run: make check-imports
+#
+# Remove ignore_imports entries as refactors land; link the fixing PR/issue.
+# Direct (non-transitive) edges are the counterpart in
+# .github/ci/check_direct_imports.py.
+
+[importlinter]
+root_packages =
+    surfaces
+    config
+    core
+    gateway
+    integrations
+    infrastructure
+    tools
+
+[importlinter:contract:opensre-layers]
+name = OpenSRE package layers (transitive)
+type = layers
+layers =
+    surfaces | gateway
+    tools | integrations
+    # ``:`` = siblings may cross-import (import-linter multi-item layers).
+    # ``|`` would forbid core <-> infrastructure, but both packages depend on each other.
+    core : infrastructure
+    # Bottom layer: config imports no other first-party package.
+    config
+ignore_imports =
+    # infrastructure -> integrations (T-4 debt — scheduler / observability)
+    infrastructure.analytics.github_identity -> integrations.github
+    infrastructure.observability.errors.sentry -> integrations.llm_cli
+    infrastructure.scheduling.scheduler.credentials -> integrations.catalog
+    # surfaces -> gateway (cli + repl gateway commands)
+    surfaces.cli.commands.gateway -> gateway.core.process
+    surfaces.gateway_entry -> gateway.core.lifecycle.controller
+    surfaces.gateway_entry -> gateway.web.web_server
+    surfaces.interactive_shell.command_registry.gateway_cmds -> gateway.core.process
+    # tools -> integrations (T-4 debt — vendor tools / reporting)
+    tools.cross_vendor.fix_sentry_issue.context -> integrations.sentry
+    tools.cross_vendor.fix_sentry_issue.context -> integrations.sentry.issue_url
+    tools.cross_vendor.fix_sentry_issue.runner -> integrations.coding_agent
+    tools.cross_vendor.fix_sentry_issue.runner -> integrations.git
+    tools.cross_vendor.fix_sentry_issue.runner -> integrations.github
+    tools.cross_vendor.fix_sentry_issue.ship -> integrations.coding_agent
+    tools.cross_vendor.fix_sentry_issue.ship -> integrations.git
+    tools.cross_vendor.fix_sentry_issue.ship -> integrations.github
+    tools.cross_vendor.resolve_merge_conflicts.runner -> integrations.coding_agent
+    tools.cross_vendor.resolve_merge_conflicts.runner -> integrations.git
+    tools.cross_vendor.resolve_merge_conflicts.runner -> integrations.github
+    tools.cross_vendor.resolve_merge_conflicts.tool -> integrations.git
+    tools.cross_vendor.resolve_merge_conflicts.tool -> integrations.github
+    tools.cross_vendor.resolve_merge_conflicts.errors -> integrations.git
+    tools.interactive_shell.implementation.claude_code_executor -> integrations.llm_cli
+    tools.interactive_shell.shell.merge_guard -> integrations.git
+    tools.system.python_execution_tool.credentials -> integrations.github
+
+[importlinter:contract:gateway-core-below-surfaces]
+name = Gateway core sits below transports and web
+type = forbidden
+source_modules =
+    gateway.core
+forbidden_modules =
+    gateway.transports
+    gateway.web
+ignore_imports =
+    # Composition root: the one edge into the surface facade, which owns web
+    # and chat transport wiring. Pinned by gateway/tests/test_package_borders.py
+    # (test_only_controller_imports_the_startup_module).
+    gateway.core.lifecycle.controller -> gateway.startup
+
+[importlinter:contract:gateway-web-no-transports]
+name = Gateway web surface never imports chat transports
+type = forbidden
+source_modules =
+    gateway.web
+forbidden_modules =
+    gateway.transports
+
+[importlinter:contract:gateway-transports-independent]
+name = Gateway transports are peers
+type = independence
+modules =
+    gateway.transports.slack
+    gateway.transports.discord
+    gateway.transports.telegram
